@@ -1,0 +1,177 @@
+{
+  "version": "1.0",
+  "generatedAt": "2026-04-13T16:00:00.000Z",
+  "examples": {
+    "grid_connected_industrial": {
+      "company": {
+        "companyName": "Tata Steel Ltd.",
+        "siteName": "Jamshedpur Plant - Unit 3",
+        "premisesType": "Industrial",
+        "premisesOtherText": "",
+        "gridConnection": "Grid-connected",
+        "state": "Jharkhand",
+        "district": "East Singhbhum",
+        "locationDetails": "Near NH-33, Sakchi Industrial Area",
+        "contactName": "Rajesh Kumar",
+        "contactRole": "Plant Manager",
+        "contactPhone": "+919876543210",
+        "contactEmail": "rajesh.kumar@tatasteel.com"
+      },
+      "useCases": {
+        "selected": ["Demand charge reduction", "Peak shaving", "Diesel replacement"],
+        "otherText": ""
+      },
+      "loadProfile": {
+        "sanctionedLoad": 1200,
+        "peakLoad": 1000,
+        "hourlyValues": [320,300,280,290,310,380,520,720,880,950,1000,980,960,940,920,880,820,760,650,580,520,460,400,350],
+        "avgMonthlyConsumption": 432000,
+        "powerFactor": 0.92
+      },
+      "supplyStack": {
+        "discom": {
+          "sanctionedLoad": 1200,
+          "contractDemand": 1400,
+          "monthlyBill": 1850000,
+          "tariffCategory": "Industrial (HT)",
+          "voltageLevel": "HT (1 kV – 33 kV)",
+          "demandChargeRate": 350,
+          "avgEnergyRate": 8.5,
+          "todApplicable": "Yes — Time of Day tariff applies"
+        },
+        "discomNotApplicable": false,
+        "powerOutage": {
+          "outageFrequency": "Occasional (1–4/month)",
+          "typicalDuration": "1 – 4 hours",
+          "backupHoursNeeded": 4,
+          "estimatedOutageCost": 75000
+        },
+        "solarOnSite": { "hasSolar": true, "installedCapacityKwp": 200, "avgDailyGenerationKwh": 800 },
+        "dieselNotRelevant": false,
+        "dieselGensets": [
+          { "id": "dg1", "ratingKva": 500, "quantity": 2, "runHoursPerDay": 4, "fuelCost": 95 }
+        ],
+        "monthlyDieselSpend": 150000,
+        "otherSourcesNotRelevant": false,
+        "otherSources": [
+          { "id": "os1", "sourceType": "Open Access", "powerSource": "", "monthlyEnergyMwh": 150, "avgCostPerKwh": 5.2 }
+        ]
+      },
+      "budgetRange": "₹5 – 15 Crore",
+      "consentGiven": true
+    },
+    "offgrid_mining": {
+      "company": {
+        "companyName": "Vedanta Resources",
+        "siteName": "Lanjigarh Bauxite Mine",
+        "premisesType": "Mining",
+        "premisesOtherText": "",
+        "gridConnection": "Off-grid (no grid connection)",
+        "state": "Odisha",
+        "district": "Kalahandi",
+        "locationDetails": "Remote hilltop site, nearest grid 12 km",
+        "contactName": "Suresh Patel",
+        "contactRole": "Site Engineer",
+        "contactPhone": "+919012345678",
+        "contactEmail": "suresh.patel@vedanta.com"
+      },
+      "useCases": {
+        "selected": ["Diesel replacement", "Backup/reliability", "Carbon reduction target"],
+        "otherText": ""
+      },
+      "loadProfile": {
+        "sanctionedLoad": null,
+        "peakLoad": 800,
+        "hourlyValues": [400,400,350,350,350,400,600,750,800,800,780,750,700,750,800,780,700,650,550,500,450,420,400,400],
+        "avgMonthlyConsumption": null,
+        "powerFactor": null
+      },
+      "supplyStack": {
+        "discom": {
+          "sanctionedLoad": null,
+          "contractDemand": null,
+          "monthlyBill": null,
+          "tariffCategory": "",
+          "voltageLevel": "",
+          "demandChargeRate": null,
+          "avgEnergyRate": null,
+          "todApplicable": ""
+        },
+        "discomNotApplicable": true,
+        "powerOutage": {
+          "outageFrequency": "",
+          "typicalDuration": "",
+          "backupHoursNeeded": 6,
+          "estimatedOutageCost": 120000
+        },
+        "solarOnSite": { "hasSolar": false, "installedCapacityKwp": null, "avgDailyGenerationKwh": null },
+        "dieselNotRelevant": false,
+        "dieselGensets": [
+          { "id": "dg1", "ratingKva": 1000, "quantity": 3, "runHoursPerDay": 18, "fuelCost": 102 },
+          { "id": "dg2", "ratingKva": 500, "quantity": 1, "runHoursPerDay": 12, "fuelCost": 102 }
+        ],
+        "monthlyDieselSpend": 2400000,
+        "otherSourcesNotRelevant": true,
+        "otherSources": []
+      },
+      "budgetRange": "₹15 – 50 Crore",
+      "consentGiven": true
+    },
+    "partial_grid_cold_storage": {
+      "company": {
+        "companyName": "Snowman Logistics",
+        "siteName": "Navi Mumbai Cold Chain Hub",
+        "premisesType": "Cold Storage",
+        "premisesOtherText": "",
+        "gridConnection": "Partial (unreliable grid, primarily DG/other)",
+        "state": "Maharashtra",
+        "district": "Thane",
+        "locationDetails": "JNPT Industrial Zone",
+        "contactName": "Anita Desai",
+        "contactRole": "Facility Manager",
+        "contactPhone": "+919898765432",
+        "contactEmail": "anita.desai@snowman.in"
+      },
+      "useCases": {
+        "selected": ["Backup/reliability", "Diesel replacement", "Peak shaving"],
+        "otherText": ""
+      },
+      "loadProfile": {
+        "sanctionedLoad": 500,
+        "peakLoad": 450,
+        "hourlyValues": [380,380,380,380,380,400,420,440,450,450,430,420,410,420,440,450,440,420,400,400,390,380,380,380],
+        "avgMonthlyConsumption": 288000,
+        "powerFactor": 0.88
+      },
+      "supplyStack": {
+        "discom": {
+          "sanctionedLoad": 500,
+          "contractDemand": 550,
+          "monthlyBill": 650000,
+          "tariffCategory": "Commercial",
+          "voltageLevel": "HT (1 kV – 33 kV)",
+          "demandChargeRate": 300,
+          "avgEnergyRate": 9.2,
+          "todApplicable": "Yes — Time of Day tariff applies"
+        },
+        "discomNotApplicable": false,
+        "powerOutage": {
+          "outageFrequency": "Frequent (1–3/week)",
+          "typicalDuration": "1 – 4 hours",
+          "backupHoursNeeded": 8,
+          "estimatedOutageCost": 200000
+        },
+        "solarOnSite": { "hasSolar": false, "installedCapacityKwp": null, "avgDailyGenerationKwh": null },
+        "dieselNotRelevant": false,
+        "dieselGensets": [
+          { "id": "dg1", "ratingKva": 500, "quantity": 2, "runHoursPerDay": 8, "fuelCost": 95 }
+        ],
+        "monthlyDieselSpend": 480000,
+        "otherSourcesNotRelevant": true,
+        "otherSources": []
+      },
+      "budgetRange": "₹1 – 5 Crore",
+      "consentGiven": true
+    }
+  }
+}
