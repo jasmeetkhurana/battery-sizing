@@ -1,0 +1,10 @@
+services:
+  - type: web
+    name: battery-sizing
+    runtime: node
+    plan: free
+    buildCommand: npm install --omit=dev
+    startCommand: npm start
+    envVars:
+      - key: ADMIN_TOKEN
+        generateValue: true
