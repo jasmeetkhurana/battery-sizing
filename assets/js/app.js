@@ -91,6 +91,8 @@
       },
       solution: {
         plan: "",
+        // What the customer is open to — drives sizing and prefills
+        appetite: { roofAvail: "yes", roofAreaSqm: "", openAccessOk: true, exchangeOk: true },
         prefs: { pv_module: "", pv_inverter: "", battery: "", pcs: "", mv_station: "" },
         pv: {
           enabled: true,
@@ -105,7 +107,7 @@
           lcoeInr: "3.8"
         },
         bess: { enabled: true, batteryId: "", batteryQty: "", pcsId: "", pcsQty: "" },
-        exchange: { enabled: false, priceInr: "5.5", maxKw: "" }
+        exchange: { enabled: false, maxKw: "" }
       },
       contact: { companyName: "", personName: "", personRole: "", personPhone: "", personEmail: "" },
       consent: false
@@ -147,6 +149,7 @@
         mix: { ...base.mix, ...(parsed.mix || {}) },
         solution: {
           plan: (parsed.solution || {}).plan || "",
+          appetite: { ...base.solution.appetite, ...((parsed.solution || {}).appetite || {}) },
           prefs: { ...base.solution.prefs, ...((parsed.solution || {}).prefs || {}) },
           pv: { ...base.solution.pv, ...((parsed.solution || {}).pv || {}) },
           bess: { ...base.solution.bess, ...((parsed.solution || {}).bess || {}) },
@@ -346,6 +349,22 @@
     const sum = w.reduce((a, b) => a + b, 0);
     return w.map((x) => x / sum);
   })();
+
+  // Typical IEX day-ahead market clearing price pattern (₹/kWh) — historically
+  // cheapest during the midday solar glut, most expensive in the evening peak.
+  const IEX_MARKET_TOD = [
+    4.2, 4.0, 3.9, 3.8, 3.9, 4.4, // 00–05 night
+    5.8, 6.4, 6.0, 4.5, 3.4, 3.0, // 06–11 morning ramp into solar hours
+    2.9, 3.0, 3.2, 3.6, 4.4, 5.8, // 12–17 solar glut, late-afternoon ramp
+    8.5, 9.5, 9.2, 8.4, 6.5, 5.0 // 18–23 evening peak, easing off
+  ];
+  const OA_CHARGES_INR = 1.5; // wheeling + transmission + cross-subsidy surcharge etc.
+  const OPEN_ACCESS_SOLAR_INR = 4.5; // prevalent landed cost of open-access solar PPA
+  const ROOFTOP_SQM_PER_KWP = 10; // ~100 sq ft of shadow-free roof per kWp
+
+  function exchangeLandedTod() {
+    return IEX_MARKET_TOD.map((p) => p + OA_CHARGES_INR);
+  }
 
   // ---------------- Stacked chart renderer ----------------
   function drawStack(canvas, seriesList, opts = {}) {
@@ -1076,6 +1095,7 @@
         acKw,
         ratio: dcKwp && acKw ? dcKwp / acKw : null,
         areaAcres: dcKwp ? (dcKwp / 1000) * 5 : null,
+        areaSqm: dcKwp ? dcKwp * ROOFTOP_SQM_PER_KWP : null,
         dailyGenKwh: dcKwp ? dcKwp * num(sol.pv.specificYield, 4.2) : null,
         mvKva: mv ? mv.specs.kva * mvQty : null,
         stringWindow: null
@@ -1106,9 +1126,13 @@
     }
 
     if (sol.exchange.enabled) {
+      const tod = exchangeLandedTod();
       m.exchange = {
-        priceInr: num(sol.exchange.priceInr, 5.5),
-        maxKw: num(sol.exchange.maxKw, num(state.site.sanctionedKw))
+        maxKw: num(sol.exchange.maxKw, num(state.site.sanctionedKw)),
+        tod,
+        minInr: Math.min(...tod),
+        maxInr: Math.max(...tod),
+        avgInr: tod.reduce((a, b) => a + b, 0) / 24
       };
     }
 
@@ -1148,6 +1172,16 @@
       if (state.solution.pv.mode === "rooftop" && pv.acKw !== null && ls.sanctionedKw > 0 && pv.acKw > ls.sanctionedKw) {
         push("warn", `Rooftop PV AC ${fmt(pv.acKw, 0)} kW exceeds sanctioned load ${fmt(ls.sanctionedKw, 0)} kW — check net-metering rules with your DISCOM.`);
       }
+      const app = state.solution.appetite;
+      if (state.solution.pv.mode === "rooftop" && pv.areaSqm) {
+        if (app.roofAvail === "none") {
+          push("warn", `Rooftop PV selected but you indicated no roof space — consider open-access solar instead.`);
+        } else if (app.roofAvail === "limited" && num(app.roofAreaSqm) > 0 && pv.areaSqm > num(app.roofAreaSqm)) {
+          push("warn", `This array needs ~${fmt(pv.areaSqm, 0)} m² of roof but you have ~${fmt(num(app.roofAreaSqm), 0)} m² — reduce size or use open access.`);
+        } else {
+          push("ok", `Rooftop array needs ~${fmt(pv.areaSqm, 0)} m² (${fmt(pv.areaSqm * 10.76, 0)} sq ft) of shadow-free roof.`);
+        }
+      }
     }
 
     if (m.bess) {
@@ -1177,10 +1211,11 @@
 
     if (m.exchange) {
       const gridCost = sourceCost("grid");
-      if (m.exchange.priceInr >= gridCost) {
-        push("warn", `Exchange price ₹${fmt(m.exchange.priceInr, 2)}/kWh is not below your grid rate ₹${fmt(gridCost, 2)}/kWh — it will not reduce cost.`);
+      const cheapHours = m.exchange.tod.filter((p) => p < gridCost).length;
+      if (cheapHours === 0) {
+        push("warn", `At typical IEX prices (₹${fmt(m.exchange.minInr, 1)}–${fmt(m.exchange.maxInr, 1)}/kWh landed), exchange power never beats your grid rate ₹${fmt(gridCost, 2)}/kWh.`);
       } else {
-        push("ok", `Exchange power at ₹${fmt(m.exchange.priceInr, 2)}/kWh undercuts grid at ₹${fmt(gridCost, 2)}/kWh.`);
+        push("ok", `Exchange power beats your ₹${fmt(gridCost, 2)}/kWh grid rate in ${cheapHours} of 24 hours — cheapest ~₹${fmt(m.exchange.minInr, 1)}/kWh around midday.`);
       }
     }
 
@@ -1243,8 +1278,10 @@
     const bessPow = m.bess && m.bess.powerKw ? m.bess.powerKw : 0;
 
     const exNew = m.exchange;
-    const exPrice = exNew ? exNew.priceInr : null;
+    const exTod = exchangeLandedTod(); // hourly landed IEX price
     const exMaxKw = exNew ? exNew.maxKw : 0;
+    // Cheapest marginal purchase rate at each hour (new exchange vs grid)
+    const buyRate = (h) => (exNew && exTod[h] < cost.grid ? exTod[h] : cost.grid);
 
     const serve = {
       existingSolar: zeros(),
@@ -1265,7 +1302,8 @@
       remaining[h] -= serve.newSolar[h];
     }
 
-    // BESS charging: solar surplus first, then cheap night energy
+    // BESS charging: solar surplus first, then the cheapest purchase hours
+    // (typically midday exchange power or off-peak grid)
     let soc = 0;
     let chargeCost = 0;
     let chargeKwh = 0;
@@ -1279,17 +1317,17 @@
         }
       }
       if (soc < bessCap * 0.98) {
-        const nightRate = exNew && exPrice < cost.grid ? exPrice : cost.grid;
-        const nightSource = exNew && exPrice < cost.grid ? "exchange" : "grid";
-        for (const h of [0, 1, 2, 3, 4, 5, 22, 23]) {
-          if (outage[h]) continue;
+        const chargeHours = [];
+        for (let h = 0; h < 24; h += 1) if (!outage[h]) chargeHours.push({ h, rate: buyRate(h) });
+        chargeHours.sort((a, b) => a.rate - b.rate);
+        for (const { h, rate } of chargeHours) {
           const c = Math.min(bessPow, bessCap - soc);
           if (c <= 0) break;
           soc += c;
           chargeKwh += c;
-          chargeCost += c * nightRate;
+          chargeCost += c * rate;
           // charging energy is an extra purchase, tracked for cost (not load service)
-          if (nightSource === "exchange") serve._exchangeChargeKwh = (serve._exchangeChargeKwh || 0) + c;
+          if (exNew && exTod[h] < cost.grid) serve._exchangeChargeKwh = (serve._exchangeChargeKwh || 0) + c;
           else serve._gridChargeKwh = (serve._gridChargeKwh || 0) + c;
         }
       }
@@ -1301,12 +1339,9 @@
     // Discharge priority 1: outage (DG) hours — most expensive energy today
     const hoursByPriority = [];
     for (let h = 0; h < 24; h += 1) if (outage[h] && remaining[h] > 0) hoursByPriority.push({ h, rate: cost.dg });
-    // Priority 2: normal hours where stored energy beats the marginal source
+    // Priority 2: normal hours where stored energy beats that hour's marginal source
     for (let h = 0; h < 24; h += 1) {
-      if (!outage[h] && remaining[h] > 0) {
-        const marginal = exNew && exPrice < cost.grid ? exPrice : cost.grid;
-        hoursByPriority.push({ h, rate: marginal });
-      }
+      if (!outage[h] && remaining[h] > 0) hoursByPriority.push({ h, rate: buyRate(h) });
     }
     hoursByPriority.sort((a, b) => b.rate - a.rate);
     for (const { h, rate } of hoursByPriority) {
@@ -1320,20 +1355,23 @@
       }
     }
 
-    // Existing exchange contracts keep serving (non-outage hours)
+    // Existing exchange contracts keep serving at their contracted rate (non-outage hours)
+    let exCostTotal = 0;
     for (let h = 0; h < 24; h += 1) {
       if (outage[h]) continue;
       const e = Math.min(existExchange[h], remaining[h]);
       serve.exchange[h] += e;
       remaining[h] -= e;
+      exCostTotal += e * cost.exchange;
     }
-    // New exchange power where it beats grid
-    if (exNew && exPrice < cost.grid) {
+    // New exchange power in the hours where IEX landed price beats grid
+    if (exNew) {
       for (let h = 0; h < 24; h += 1) {
-        if (outage[h]) continue;
+        if (outage[h] || exTod[h] >= cost.grid) continue;
         const e = Math.min(remaining[h], Math.max(0, exMaxKw - serve.exchange[h]));
         serve.exchange[h] += e;
         remaining[h] -= e;
+        exCostTotal += e * exTod[h];
       }
     }
     // Grid takes the rest in normal hours, DG only in outage hours
@@ -1347,18 +1385,12 @@
     }
 
     const sum = (arr) => arr.reduce((a, b) => a + b, 0);
-    const exchangeRateBlend = (() => {
-      // existing contract energy at its rate; incremental at new exchange price
-      const existKwh = Math.min(sum(serve.exchange), sum(existExchange));
-      const newKwh = sum(serve.exchange) - existKwh;
-      return existKwh * cost.exchange + newKwh * (exPrice ?? cost.exchange);
-    })();
 
     const costAfter =
       sum(serve.existingSolar) * cost.solar +
       sum(serve.newSolar) * pvLcoe +
       sum(serve.bess) * dischargeRate +
-      exchangeRateBlend +
+      exCostTotal +
       sum(serve.grid) * cost.grid +
       sum(serve.dg) * cost.dg;
 
@@ -1386,9 +1418,10 @@
       blendedAfter: ls.dailyKwh > 0 ? costAfter / ls.dailyKwh : 0,
       assumptions: [
         `New solar generates ${fmt(pvYield, 1)} kWh/kWp/day on a standard bell curve (06:00–18:00) at ₹${fmt(pvLcoe, 2)}/kWh.`,
-        `BESS round-trip efficiency ${Math.round(BESS_ROUNDTRIP * 100)}%; charged first from solar surplus, then off-peak purchases.`,
+        `BESS round-trip efficiency ${Math.round(BESS_ROUNDTRIP * 100)}%; charged from solar surplus first, then the cheapest purchase hours of the day.`,
+        `Exchange power priced on typical IEX day-ahead patterns — ~₹${fmt(Math.min(...IEX_MARKET_TOD), 1)}/kWh midday to ~₹${fmt(Math.max(...IEX_MARKET_TOD), 1)}/kWh evening peak, plus ₹${fmt(OA_CHARGES_INR, 1)}/kWh open-access charges.`,
         "Hours where your DG runs today are treated as grid-unavailable; only solar, BESS, and DG can serve them.",
-        "Savings compare daily energy cost before vs after, annualised × 365. Capex, demand charges, and ToD tariffs are not modelled in v1."
+        "Savings compare daily energy cost before vs after, annualised × 365. Capex and demand charges are not modelled in v1."
       ]
     };
   }
@@ -1421,9 +1454,17 @@
   };
   const PLAN_SHARES = {
     starter: { pvShare: 0.45, bessPeakShare: 0, bessHours: 0, exchange: false },
-    balanced: { pvShare: 0.75, bessPeakShare: 0.3, bessHours: 2, exchange: false },
+    balanced: { pvShare: 0.75, bessPeakShare: 0.3, bessHours: 2, exchange: true },
     max: { pvShare: 1.0, bessPeakShare: 0.45, bessHours: 3, exchange: true }
   };
+
+  // Rooftop capacity the customer's available shadow-free roof can host
+  function roofCapKwp() {
+    const a = state.solution.appetite;
+    if (a.roofAvail === "none") return 0;
+    if (a.roofAvail === "limited") return Math.max(0, num(a.roofAreaSqm) / ROOFTOP_SQM_PER_KWP);
+    return Infinity;
+  }
   const PREF_ROLES = [
     { role: "pv_module", label: "PV modules" },
     { role: "pv_inverter", label: "Solar inverters" },
@@ -1467,24 +1508,39 @@
     const sanctioned = num(state.site.sanctionedKw);
     const yieldDay = num(state.solution.pv.specificYield, 4.2);
 
-    const pvKwp = Math.round((dayHeadroomKwh * b.pvShare) / yieldDay);
+    const a = state.solution.appetite;
+    const pvKwpIdeal = Math.round((dayHeadroomKwh * b.pvShare) / yieldDay);
     const bessPowKw = Math.round(Math.max(peakKw * b.bessPeakShare, dgPeakKw));
     const bessKwh = Math.round(Math.max(bessPowKw * b.bessHours, dgKwh));
-    const mode = sanctioned > 0 && pvKwp > sanctioned ? "openaccess" : "rooftop";
-    return { pvKwp, bessPowKw, bessKwh, mode, exchange: b.exchange, peakKw, sanctioned };
+
+    // Rooftop is the default; it is limited by both roof space and sanctioned
+    // load (net-metering). When the ideal size doesn't fit, fall back to
+    // open-access solar if the customer is open to it — else cap to the roof.
+    const rooftopLimit = Math.min(roofCapKwp(), sanctioned > 0 ? sanctioned : Infinity);
+    let mode = "rooftop";
+    let pvKwp = pvKwpIdeal;
+    if (pvKwpIdeal > rooftopLimit) {
+      if (a.openAccessOk) {
+        mode = "openaccess";
+      } else {
+        pvKwp = Math.floor(Number.isFinite(rooftopLimit) ? rooftopLimit : 0);
+      }
+    }
+    return { pvKwp, pvKwpIdeal, bessPowKw, bessKwh, mode, exchange: b.exchange && a.exchangeOk, peakKw, sanctioned };
   }
 
   function buildPlanSolution(bucketKey) {
     const t = planTargets(bucketKey);
     const sol = blankState().solution;
     sol.plan = bucketKey;
+    sol.appetite = { ...state.solution.appetite };
     sol.prefs = { ...state.solution.prefs };
     sol.pv.specificYield = state.solution.pv.specificYield || "4.2";
 
     if (t.pvKwp >= 50) {
       sol.pv.enabled = true;
       sol.pv.mode = t.mode;
-      sol.pv.lcoeInr = t.mode === "rooftop" ? "3.8" : "4.5";
+      sol.pv.lcoeInr = t.mode === "rooftop" ? "3.8" : String(OPEN_ACCESS_SOLAR_INR);
       const module = preferredProducts("pv_module").sort((a, b) => b.specs.powerWp - a.specs.powerWp)[0] || null;
       if (module) {
         sol.pv.moduleId = String(module.id);
@@ -1543,7 +1599,6 @@
 
     sol.exchange.enabled = t.exchange;
     if (t.exchange) {
-      sol.exchange.priceInr = state.solution.exchange.priceInr || "5.5";
       sol.exchange.maxKw = String(t.sanctioned || Math.round(t.peakKw));
     }
     return sol;
@@ -1619,13 +1674,22 @@
     const plans = {};
     PLAN_ORDER.forEach((k) => (plans[k] = planSummary(k)));
     const prefRolesAvailable = PREF_ROLES.filter((r) => brandsForRole(r.role).length > 0);
+    const app = sol.appetite;
+    const recommended = (() => {
+      const t = planTargets("max");
+      return { kwp: t.pvKwpIdeal, sqm: t.pvKwpIdeal * ROOFTOP_SQM_PER_KWP };
+    })();
 
     const planCardHtml = (key) => {
       const p = plans[key];
       const pv = p.metrics.pv;
       const bess = p.metrics.bess;
+      const t = planTargets(key);
       const bits = [];
-      if (pv && pv.dcKwp) bits.push(`Solar ${fmt(pv.dcKwp, 0)} kWp${p.solution.pv.mode === "openaccess" ? " (open access)" : ""}`);
+      if (pv && pv.dcKwp) {
+        const suffix = p.solution.pv.mode === "openaccess" ? " (open access)" : t.pvKwp < t.pvKwpIdeal ? " (sized to your roof)" : "";
+        bits.push(`Solar ${fmt(pv.dcKwp, 0)} kWp${suffix}`);
+      }
       if (bess && bess.energyKwh) bits.push(`BESS ${fmt(bess.energyKwh / 1000, 2)} MWh`);
       if (p.solution.exchange.enabled) bits.push("Exchange power");
       if (!bits.length) bits.push("No new equipment fits this profile");
@@ -1657,13 +1721,43 @@
         </div>
 
         <div class="col-12 card">
-          <h3>1 · Pick the outcome you want</h3>
-          <p class="sub">We sized each option from your demand profile — solar, battery, and exchange power are pre-selected for you.</p>
+          <h3>1 · What are you open to?</h3>
+          <p class="sub">Your answers shape the recommendations below — we only suggest what you can actually build.</p>
+          <div class="grid">
+            <div class="col-12">
+              <label>Rooftop solar space</label>
+              <div class="field-hint" style="margin-bottom:.45rem">Fully covering your daytime demand needs ~<strong>${fmt(recommended.kwp, 0)} kWp</strong> of solar — about <strong>${fmt(recommended.sqm, 0)} m²</strong> (${fmt(recommended.sqm * 10.76, 0)} sq ft) of shadow-free roof. Is that available?</div>
+              <div class="seg" id="roofSeg">
+                <button type="button" class="${app.roofAvail === "yes" ? "active" : ""}" data-roof="yes">Yes, available</button>
+                <button type="button" class="${app.roofAvail === "limited" ? "active" : ""}" data-roof="limited">Only some space</button>
+                <button type="button" class="${app.roofAvail === "none" ? "active" : ""}" data-roof="none">No roof space</button>
+              </div>
+            </div>
+            ${
+              app.roofAvail === "limited"
+                ? `<div class="col-3"><label>Available roof area (m²)</label><input id="roofAreaSqm" type="number" min="0" step="10" value="${app.roofAreaSqm}" />
+                    <div class="field-hint">≈ ${fmt(num(app.roofAreaSqm) / ROOFTOP_SQM_PER_KWP, 0)} kWp of rooftop solar</div></div>`
+                : ""
+            }
+            ${
+              app.roofAvail !== "yes"
+                ? `<div class="col-12"><label>Not enough roof — go offsite?</label>
+                    <div class="chip-row"><button type="button" class="chip ${app.openAccessOk ? "on" : ""}" data-appetite="openAccessOk">Open to open-access solar — offsite plant, ~₹${fmt(OPEN_ACCESS_SOLAR_INR, 1)}/kWh landed</button></div></div>`
+                : ""
+            }
+            <div class="col-12"><label>Power exchange (IEX)</label>
+              <div class="chip-row"><button type="button" class="chip ${app.exchangeOk ? "on" : ""}" data-appetite="exchangeOk">Open to exchange-traded power — historically ~₹${fmt(Math.min(...IEX_MARKET_TOD) + OA_CHARGES_INR, 1)}/kWh landed midday, ~₹${fmt(Math.max(...IEX_MARKET_TOD) + OA_CHARGES_INR, 1)}/kWh evening peak</button></div></div>
+          </div>
+        </div>
+
+        <div class="col-12 card">
+          <h3>2 · Pick the outcome you want</h3>
+          <p class="sub">We sized each option from your demand profile and what you're open to — solar, battery, and exchange power are pre-selected for you.</p>
           <div class="plan-row">${PLAN_ORDER.map(planCardHtml).join("")}</div>
         </div>
 
         <div class="col-12 card">
-          <h3>2 · Brand preferences <span class="tag" style="margin-left:.4rem">optional</span></h3>
+          <h3>3 · Brand preferences <span class="tag" style="margin-left:.4rem">optional</span></h3>
           <p class="sub">Prefer a manufacturer? We will use their products in the suggested configuration where available.</p>
           <div class="grid">
             ${prefRolesAvailable
@@ -1680,7 +1774,7 @@
         </div>
 
         <div class="col-12 card">
-          <h3>3 · Your ${sol.plan === "custom" ? "custom" : "suggested"} configuration</h3>
+          <h3>4 · Your ${sol.plan === "custom" ? "custom" : "suggested"} configuration</h3>
           ${
             bom.length
               ? `<table class="bom-table"><thead><tr><th>Item</th><th>Qty</th><th>Spec</th></tr></thead><tbody>
@@ -1691,7 +1785,7 @@
           <div class="tag-row">
             ${metrics.pv ? `<span class="tag accent">Solar DC ${fmt(metrics.pv.dcKwp, 0)} kWp</span><span class="tag accent">AC ${fmt(metrics.pv.acKw, 0)} kW</span><span class="tag">DC/AC ${fmt(metrics.pv.ratio, 2)}</span><span class="tag">~${fmt(metrics.pv.dailyGenKwh, 0)} kWh/day</span>` : ""}
             ${metrics.bess ? `<span class="tag accent">BESS ${fmt(metrics.bess.energyKwh !== null ? metrics.bess.energyKwh / 1000 : null, 2)} MWh / ${fmt(metrics.bess.powerKw !== null ? metrics.bess.powerKw / 1000 : null, 2)} MW</span>` : ""}
-            ${metrics.exchange ? `<span class="tag accent">Exchange up to ${fmt(metrics.exchange.maxKw, 0)} kW @ ₹${fmt(metrics.exchange.priceInr, 2)}</span>` : ""}
+            ${metrics.exchange ? `<span class="tag accent">Exchange up to ${fmt(metrics.exchange.maxKw, 0)} kW @ ₹${fmt(metrics.exchange.minInr, 1)}–${fmt(metrics.exchange.maxInr, 1)}/kWh (IEX ToD)</span>` : ""}
           </div>
           <details class="adv" id="advTune" ${sol.plan === "custom" ? "open" : ""}>
             <summary>Fine-tune products &amp; quantities (advanced)</summary>
@@ -1726,7 +1820,7 @@
               <span class="tag accent">DC ${fmt(metrics.pv.dcKwp, 1)} kWp</span>
               <span class="tag accent">AC ${fmt(metrics.pv.acKw, 0)} kW</span>
               <span class="tag">DC/AC ${fmt(metrics.pv.ratio, 2)}</span>
-              <span class="tag">~${fmt(metrics.pv.areaAcres, 1)} acres</span>
+              ${sol.pv.mode === "rooftop" ? `<span class="tag">~${fmt(metrics.pv.areaSqm, 0)} m² roof</span>` : `<span class="tag">~${fmt(metrics.pv.areaAcres, 1)} acres</span>`}
               <span class="tag">~${fmt(metrics.pv.dailyGenKwh, 0)} kWh/day</span>
             </div>`
                 : ""
@@ -1759,9 +1853,14 @@
         <div class="adv-block">
           <h3><label class="inline-check"><input type="checkbox" id="exEnabled" ${sol.exchange.enabled ? "checked" : ""} /> Exchange / Open Access Power</label></h3>
           <div class="${sol.exchange.enabled ? "" : "hidden"}">
-            <p class="sub">Buy power from the exchange (IEX) or via open access when it is cheaper than your grid tariff.</p>
+            <p class="sub">Buys from the exchange (IEX) only in the hours where it beats your grid tariff, using typical day-ahead price patterns.</p>
+            <div class="tag-row" style="margin:.2rem 0 .7rem">
+              <span class="tag">Midday ~₹${fmt(IEX_MARKET_TOD[12] + OA_CHARGES_INR, 1)}/kWh</span>
+              <span class="tag">Night ~₹${fmt(IEX_MARKET_TOD[2] + OA_CHARGES_INR, 1)}/kWh</span>
+              <span class="tag">Evening peak ~₹${fmt(IEX_MARKET_TOD[19] + OA_CHARGES_INR, 1)}/kWh</span>
+              <span class="tag">incl. ₹${fmt(OA_CHARGES_INR, 1)}/kWh open-access charges</span>
+            </div>
             <div class="grid">
-              <div class="col-4"><label>Expected landed price (₹/kWh)</label><input id="exPrice" type="number" step="0.1" value="${sol.exchange.priceInr}" /></div>
               <div class="col-4"><label>Max drawal (kW)</label><input id="exMaxKw" type="number" min="0" placeholder="${num(state.site.sanctionedKw) || ""}" value="${sol.exchange.maxKw}" /></div>
             </div>
           </div>
@@ -1781,6 +1880,29 @@
       adv.open = sol.plan === "custom" || advOpen;
       adv.addEventListener("toggle", () => (advOpen = adv.open));
     }
+
+    // Appetite answers re-size the suggested plans
+    const reapplyPlan = () => {
+      if (sol.plan && sol.plan !== "custom") applyPlan(sol.plan);
+      renderDesign();
+    };
+    el.view.querySelectorAll("#roofSeg [data-roof]").forEach((btn) =>
+      btn.addEventListener("click", () => {
+        app.roofAvail = btn.dataset.roof;
+        reapplyPlan();
+      })
+    );
+    const roofArea = document.getElementById("roofAreaSqm");
+    if (roofArea) roofArea.addEventListener("change", () => {
+      app.roofAreaSqm = roofArea.value;
+      reapplyPlan();
+    });
+    el.view.querySelectorAll("[data-appetite]").forEach((chip) =>
+      chip.addEventListener("click", () => {
+        app[chip.dataset.appetite] = !app[chip.dataset.appetite];
+        reapplyPlan();
+      })
+    );
 
     el.view.querySelectorAll("[data-plan]").forEach((cardBtn) =>
       cardBtn.addEventListener("click", () => {
@@ -1850,7 +1972,6 @@
     rerenderOn("bessBatteryQty", (v) => (sol.bess.batteryQty = v));
     rerenderOn("bessPcs", (v) => (sol.bess.pcsId = v));
     rerenderOn("bessPcsQty", (v) => (sol.bess.pcsQty = v));
-    rerenderOn("exPrice", (v) => (sol.exchange.priceInr = v), false);
     rerenderOn("exMaxKw", (v) => (sol.exchange.maxKw = v), false);
   }
 
@@ -2246,7 +2367,7 @@
       );
     }
     if (metrics.exchange) {
-      totalPairs.push(["Exchange power", `up to ${fmt(metrics.exchange.maxKw, 0)} kW @ ${inr(metrics.exchange.priceInr, 2)}/kWh`]);
+      totalPairs.push(["Exchange power", `up to ${fmt(metrics.exchange.maxKw, 0)} kW @ ${inr(metrics.exchange.minInr, 1)}-${fmt(metrics.exchange.maxInr, 1)}/kWh (IEX ToD)`]);
     }
     if (totalPairs.length) kvRows(totalPairs, 2);
 

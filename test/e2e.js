@@ -192,9 +192,19 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   check("plan cards show estimated savings", Array.from(planCards).every((c) => c.textContent.includes("₹")));
   check("plan auto-picks products into BOM", doc.querySelectorAll(".bom-table tbody tr").length >= 2);
 
+  // appetite: roof space + willingness to try open access / exchange
+  check("appetite questions offered", !!doc.querySelector("#roofSeg"));
+  check("recommended roof space shown", /m²/.test(doc.querySelector(".field-hint").textContent || ""));
+  doc.querySelector('#roofSeg [data-roof="none"]').click();
+  check("no roof space pushes solar to open access", doc.querySelector(".plan-card.selected").textContent.includes("open access"));
+  doc.querySelector('[data-appetite="exchangeOk"]').click();
+  check("declining exchange removes it from plans", !doc.querySelector('.plan-card[data-plan="max"]').textContent.includes("Exchange power"));
+  doc.querySelector('[data-appetite="exchangeOk"]').click(); // open to it again
+
   doc.querySelector('.plan-card[data-plan="max"]').click();
   check("max savings plan selectable", doc.querySelector('.plan-card[data-plan="max"]').classList.contains("selected"));
   check("max plan enables exchange power", doc.getElementById("exEnabled").checked);
+  check("exchange priced on IEX ToD pattern", /IEX|midday|Evening peak/i.test(doc.body.textContent));
 
   const prefSelects = doc.querySelectorAll("[data-pref]");
   check("brand preference selectors offered per product type", prefSelects.length >= 4);
@@ -232,7 +242,6 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   const exToggle = doc.getElementById("exEnabled");
   exToggle.checked = true;
   fire(window, exToggle, "change");
-  setInput(window, doc, "exPrice", "5");
 
   const tags = Array.from(doc.querySelectorAll(".tag")).map((t) => t.textContent);
   check("PV DC total computed (2048 kWp)", tags.some((t) => t.includes("2,048") && t.includes("kWp")));
@@ -242,7 +251,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   const checksText = Array.from(doc.querySelectorAll(".check-list li")).map((li) => li.textContent).join(" | ");
   check("string sizing check produced", /modules per string/.test(checksText));
   check("PCS DC window check produced", /PCS DC window/.test(checksText));
-  check("exchange price check produced", /Exchange power at|Exchange price/.test(checksText));
+  check("exchange ToD economics check produced", /Exchange power (beats|never beats)/.test(checksText));
 
   const heroVals = statVals();
   check("live savings estimate shown", heroVals.length > 0 && heroVals.some((v) => v.includes("₹")));
