@@ -21,16 +21,8 @@
       "Carbon reduction target",
       "Other"
     ],
-    locations: {
-      Maharashtra: ["Pune", "Mumbai", "Thane", "Nashik", "Nagpur"],
-      Gujarat: ["Ahmedabad", "Surat", "Vadodara", "Rajkot", "Kutch"],
-      Karnataka: ["Bengaluru Urban", "Mysuru", "Tumakuru", "Belagavi", "Ballari"],
-      TamilNadu: ["Chennai", "Coimbatore", "Salem", "Madurai", "Tiruppur"],
-      Rajasthan: ["Jaipur", "Jodhpur", "Kota", "Alwar", "Udaipur"],
-      Haryana: ["Gurugram", "Faridabad", "Panipat", "Hisar", "Sonipat"],
-      UttarPradesh: ["Noida", "Lucknow", "Kanpur Nagar", "Ghaziabad", "Agra"],
-      Telangana: ["Hyderabad", "Rangareddy", "Medchal", "Warangal", "Nalgonda"]
-    }
+    // Full state/UT + district list lives in assets/js/locations.js
+    locations: window.INDIA_LOCATIONS || { Maharashtra: ["Mumbai City", "Pune", "Thane"] }
   };
 
   // Today's sources (stack order: bottom -> top)

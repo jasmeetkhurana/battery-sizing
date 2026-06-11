@@ -102,6 +102,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   window.jspdf = { jsPDF: TestPdf };
 
   window.localStorage.clear();
+  window.eval(fs.readFileSync(path.join(ROOT, "assets", "js", "locations.js"), "utf8"));
   const appSrc = fs.readFileSync(path.join(ROOT, "assets", "js", "app.js"), "utf8");
   window.eval(appSrc);
   await sleep(300); // allow catalog fetch
@@ -114,7 +115,10 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   check("starts on site step", stepTitle() === "Your Site");
   setInput(window, doc, "siteName", "Taloja Plant 2");
   setInput(window, doc, "premisesType", "Industrial");
+  const stateSel = doc.getElementById("state");
+  check("all Indian states & UTs in dropdown", stateSel.options.length >= 37); // 36 + placeholder
   setInput(window, doc, "state", "Maharashtra");
+  check("districts repopulate for selected state", doc.getElementById("district").options.length === 37); // 36 districts + placeholder
   setInput(window, doc, "district", "Pune");
   setInput(window, doc, "sanctionedKw", "300");
   const objChip = doc.querySelector('[data-obj="Reduce electricity cost"]');
