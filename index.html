@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Solar + BESS Savings Studio | India</title>
+    <link rel="stylesheet" href="./assets/css/theme.css" />
+  </head>
+  <body>
+    <div class="app">
+      <header class="app-header">
+        <div class="brand">
+          <div class="brand-mark">
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+              <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
+            </svg>
+          </div>
+          <div class="brand-text">
+            <h1>Savings Studio</h1>
+            <p>Solar + BESS for large consumers in India</p>
+          </div>
+        </div>
+        <ol class="stepper" id="stepper"></ol>
+        <div class="header-actions">
+          <button id="saveDraftBtn" class="btn btn-ghost">Save draft</button>
+          <button id="exportBtn" class="btn btn-ghost">Export PDF</button>
+        </div>
+      </header>
+
+      <main class="stage">
+        <div class="stage-head">
+          <h2 id="stepTitle"></h2>
+          <p id="stepDescription"></p>
+        </div>
+        <section id="view" class="view"></section>
+      </main>
+
+      <footer class="actionbar">
+        <button id="prevBtn" class="btn btn-muted">Back</button>
+        <div class="actionbar-note" id="actionNote"></div>
+        <div class="actionbar-right">
+          <button id="nextBtn" class="btn btn-primary">Continue</button>
+          <button id="submitBtn" class="btn btn-primary hidden">Submit &amp; Generate PDF</button>
+        </div>
+      </footer>
+    </div>
+
+    <div id="toast" class="toast hidden"></div>
+    <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
+    <script src="./assets/js/app.js"></script>
+  </body>
+</html>

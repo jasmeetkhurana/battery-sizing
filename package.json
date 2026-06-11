@@ -1,0 +1,21 @@
+{
+  "name": "solar-bess-solution-platform",
+  "version": "3.0.0",
+  "description": "Solar + BESS solution design platform for large electricity consumers in India",
+  "main": "server/index.js",
+  "scripts": {
+    "start": "node server/index.js",
+    "seed": "node server/seed.js",
+    "test": "node test/e2e.js"
+  },
+  "license": "UNLICENSED",
+  "private": true,
+  "dependencies": {
+    "better-sqlite3": "^12.10.0",
+    "express": "^5.2.1"
+  },
+  "devDependencies": {
+    "jsdom": "^29.1.1",
+    "jspdf": "^4.2.1"
+  }
+}

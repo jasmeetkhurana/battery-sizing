@@ -1,0 +1,12 @@
+# Dependencies
+node_modules/
+
+# Local database (seeded via `npm run seed`)
+server/data.sqlite*
+
+# Generated reports
+*.pdf
+
+# OS / editor noise
+.DS_Store
+Thumbs.db
